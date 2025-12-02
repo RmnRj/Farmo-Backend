@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils import timezone
+from django.contrib.auth.hashers import make_password, check_password
 
 
 class Users(models.Model):
@@ -12,7 +13,6 @@ class Users(models.Model):
 	phone = models.CharField(max_length=15, unique=True)
 	phone2 = models.CharField(max_length=15, blank=True, null=True)
 	email = models.EmailField(max_length=100, unique=True)
-	password = models.CharField(max_length=255, blank=True, null=True)
 	province = models.CharField(max_length=50, blank=True, null=True)
 	district = models.CharField(max_length=50, blank=True, null=True)
 	ward = models.CharField(max_length=50, blank=True, null=True)
@@ -30,8 +30,14 @@ class Users(models.Model):
 class Credentials(models.Model):
 	id = models.CharField(max_length=50, primary_key=True)
 	user = models.OneToOneField(Users, on_delete=models.PROTECT, related_name='credentials', db_column='user_id')
-	password = models.CharField(max_length=20, blank=True, null=True)
+	password = models.CharField(max_length=255)
 	status = models.BooleanField()
+
+	def set_password(self, raw_password):
+		self.password = make_password(raw_password)
+
+	def check_password(self, raw_password):
+		return check_password(raw_password, self.password)
 
 	def __str__(self):
 		return f"Credentials {self.id}"
@@ -41,8 +47,14 @@ class Wallet(models.Model):
 	wallet_id = models.CharField(max_length=50, primary_key=True)
 	user = models.OneToOneField(Users, on_delete=models.PROTECT, related_name='wallet', db_column='user_id')
 	amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-	pin = models.IntegerField(blank=True, null=True)
+	pin = models.CharField(max_length=255, blank=True, null=True)
 	created_date = models.DateTimeField(default=timezone.now)
+
+	def set_pin(self, raw_pin):
+		self.pin = make_password(str(raw_pin))
+
+	def check_pin(self, raw_pin):
+		return check_password(str(raw_pin), self.pin)
 
 	def __str__(self):
 		return f"Wallet {self.wallet_id}: {self.amount}"
