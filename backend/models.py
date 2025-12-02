@@ -3,124 +3,154 @@ from django.utils import timezone
 
 
 class Users(models.Model):
-	full_name = models.CharField(max_length=200)
-	email = models.EmailField(unique=True)
-	phone = models.CharField(max_length=30, blank=True, null=True)
-	is_farmer = models.BooleanField(default=False)
-	is_active = models.BooleanField(default=True)
-	created_at = models.DateTimeField(default=timezone.now)
-	updated_at = models.DateTimeField(auto_now=True)
+	user_id = models.CharField(max_length=20, primary_key=True)
+	profile_url = models.CharField(max_length=255, blank=True, null=True)
+	user_type = models.CharField(max_length=50, blank=True, null=True)
+	f_name = models.CharField(max_length=50)
+	m_name = models.CharField(max_length=50, blank=True, null=True)
+	l_name = models.CharField(max_length=50)
+	phone = models.CharField(max_length=15, unique=True)
+	phone2 = models.CharField(max_length=15, blank=True, null=True)
+	email = models.EmailField(max_length=100, unique=True)
+	password = models.CharField(max_length=255, blank=True, null=True)
+	province = models.CharField(max_length=50, blank=True, null=True)
+	district = models.CharField(max_length=50, blank=True, null=True)
+	ward = models.CharField(max_length=50, blank=True, null=True)
+	tole = models.CharField(max_length=100, blank=True, null=True)
+	dob = models.DateField(blank=True, null=True)
+	whatsapp = models.CharField(max_length=15, blank=True, null=True)
+	facebook = models.CharField(max_length=200, blank=True, null=True)
+	join_date = models.DateTimeField(default=timezone.now)
+	about = models.CharField(max_length=50, blank=True, null=True)
 
 	def __str__(self):
-		return f"{self.full_name} <{self.email}>"
+		return f"{self.f_name} {self.l_name} ({self.user_id})"
 
 
 class Credentials(models.Model):
-	user = models.OneToOneField(Users, on_delete=models.CASCADE, related_name='credentials')
-	password_hash = models.CharField(max_length=255)
-	otp = models.CharField(max_length=50, blank=True, null=True)
-	last_login = models.DateTimeField(blank=True, null=True)
+	id = models.CharField(max_length=50, primary_key=True)
+	user = models.OneToOneField(Users, on_delete=models.PROTECT, related_name='credentials', db_column='user_id')
+	password = models.CharField(max_length=20, blank=True, null=True)
+	status = models.BooleanField()
 
 	def __str__(self):
-		return f"Credentials for {self.user.email}"
+		return f"Credentials {self.id}"
 
 
 class Wallet(models.Model):
-	user = models.OneToOneField(Users, on_delete=models.CASCADE, related_name='wallet')
-	balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-	currency = models.CharField(max_length=10, default='USD')
+	wallet_id = models.CharField(max_length=50, primary_key=True)
+	user = models.OneToOneField(Users, on_delete=models.PROTECT, related_name='wallet', db_column='user_id')
+	amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+	pin = models.IntegerField(blank=True, null=True)
+	created_date = models.DateTimeField(default=timezone.now)
 
 	def __str__(self):
-		return f"Wallet({self.user.email}): {self.balance} {self.currency}"
+		return f"Wallet {self.wallet_id}: {self.amount}"
 
 
 class Transaction(models.Model):
-	TX_TYPES = (("credit", "Credit"), ("debit", "Debit"))
-	STATUS = (("pending", "Pending"), ("done", "Done"), ("failed", "Failed"))
-
-	wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='transactions')
-	amount = models.DecimalField(max_digits=12, decimal_places=2)
-	tx_type = models.CharField(max_length=10, choices=TX_TYPES)
-	status = models.CharField(max_length=10, choices=STATUS, default='pending')
-	reference = models.CharField(max_length=200, blank=True, null=True)
-	created_at = models.DateTimeField(default=timezone.now)
+	transaction_id = models.CharField(max_length=50, primary_key=True)
+	order = models.OneToOneField('OrderRequest', on_delete=models.PROTECT, related_name='transaction', db_column='order_id')
+	payment_method = models.CharField(max_length=50)
+	transaction_id_gateway = models.CharField(max_length=100, blank=True, null=True)
+	amount = models.DecimalField(max_digits=10, decimal_places=2)
+	status = models.CharField(max_length=20, default='PENDING')
+	transaction_date = models.DateTimeField(default=timezone.now)
 
 	def __str__(self):
-		return f"{self.tx_type} {self.amount} ({self.status}) for {self.wallet.user.email}"
+		return f"Transaction {self.transaction_id}: {self.amount}"
 
 
 class Product(models.Model):
-	owner = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='products')
-	title = models.CharField(max_length=255)
-	description = models.TextField(blank=True)
-	price = models.DecimalField(max_digits=10, decimal_places=2)
-	quantity = models.DecimalField(max_digits=10, decimal_places=3, default=0)
-	unit = models.CharField(max_length=50, default='kg')
-	is_active = models.BooleanField(default=True)
-	created_at = models.DateTimeField(default=timezone.now)
-	updated_at = models.DateTimeField(auto_now=True)
+	p_id = models.CharField(max_length=50, primary_key=True)
+	user = models.ForeignKey(Users, on_delete=models.PROTECT, related_name='products', db_column='user_id')
+	name = models.CharField(max_length=255)
+	category = models.CharField(max_length=100, blank=True, null=True)
+	organic = models.CharField(max_length=40, default='non-organic')
+	quantity_available = models.IntegerField()
+	cost_per_unit = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+	produced_date = models.DateField(blank=True, null=True)
+	registered_date = models.DateTimeField(default=timezone.now)
+	description = models.TextField(blank=True, null=True)
+	delivery_option = models.CharField(max_length=100, default='not-available')
+	product_status = models.CharField(max_length=100, default='AVAILABLE')
 
 	def __str__(self):
-		return f"{self.title} ({self.owner.email})"
+		return f"{self.name} ({self.p_id})"
 
 
 class ProductMedia(models.Model):
-	product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='media')
-	media_url = models.CharField(max_length=1024)
-	is_primary = models.BooleanField(default=False)
+	media_id = models.AutoField(primary_key=True)
+	product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='media', db_column='p_id')
+	media_url = models.CharField(max_length=255)
+	media_type = models.CharField(max_length=10, blank=True, null=True)
 
 	def __str__(self):
-		return f"Media for {self.product.title} ({'primary' if self.is_primary else 'secondary'})"
+		return f"Media {self.media_id} for {self.product.name}"
 
 
 class ProductRating(models.Model):
-	product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='ratings')
-	rater = models.ForeignKey(Users, on_delete=models.SET_NULL, null=True, related_name='product_ratings')
-	rating = models.PositiveSmallIntegerField()
-	comment = models.TextField(blank=True)
-	created_at = models.DateTimeField(default=timezone.now)
+	p_rating_id = models.CharField(max_length=50, primary_key=True)
+	product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='ratings', db_column='p_id')
+	user = models.ForeignKey(Users, on_delete=models.PROTECT, related_name='product_ratings', db_column='user_id')
+	score = models.IntegerField()
+	comment = models.TextField(blank=True, null=True)
+	date = models.DateTimeField(default=timezone.now)
 
 	def __str__(self):
-		return f"Rating {self.rating} for {self.product.title}"
+		return f"Rating {self.prating_id}: {self.score}"
 
 
 class FarmerRating(models.Model):
-	farmer = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='farmer_ratings')
-	rater = models.ForeignKey(Users, on_delete=models.SET_NULL, null=True, related_name='given_farmer_ratings')
-	rating = models.PositiveSmallIntegerField()
-	comment = models.TextField(blank=True)
-	created_at = models.DateTimeField(default=timezone.now)
+	r_id = models.CharField(max_length=50, primary_key=True)
+	farmer = models.ForeignKey(Users, on_delete=models.PROTECT, related_name='farmer_ratings', db_column='Farmer_id')
+	consumer = models.ForeignKey(Users, on_delete=models.PROTECT, related_name='given_farmer_ratings', db_column='Consumer_id')
+	score = models.IntegerField()
+	comment = models.TextField(blank=True, null=True)
+	date = models.DateTimeField(default=timezone.now)
 
 	def __str__(self):
-		return f"FarmerRating {self.rating} for {self.farmer.email}"
+		return f"FarmerRating {self.r_id}: {self.score}"
 
 
 class Verification(models.Model):
-	user = models.OneToOneField(Users, on_delete=models.CASCADE, related_name='verification')
-	is_verified = models.BooleanField(default=False)
-	document_url = models.CharField(max_length=1024, blank=True, null=True)
-	verified_at = models.DateTimeField(blank=True, null=True)
+	v_id = models.CharField(max_length=50, primary_key=True)
+	user = models.OneToOneField(Users, on_delete=models.PROTECT, related_name='verification', db_column='user_id')
+	status = models.CharField(max_length=20, default='Pending')
+	id_type = models.CharField(max_length=50, blank=True, null=True)
+	id_number = models.CharField(max_length=50, blank=True, null=True)
+	id_front = models.CharField(max_length=50, blank=True, null=True)
+	id_back = models.CharField(max_length=50, blank=True, null=True)
+	selfie_with_id = models.CharField(max_length=50, blank=True, null=True)
+	submission_date = models.DateTimeField(default=timezone.now)
+	approved_date = models.DateTimeField(blank=True, null=True)
+	approved_by = models.CharField(max_length=50, blank=True, null=True)
 
 	def __str__(self):
-		return f"Verification({self.user.email}): {self.is_verified}"
+		return f"Verification {self.v_id}: {self.status}"
 
 
 class OrderRequest(models.Model):
-	buyer = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='orders')
-	status = models.CharField(max_length=50, default='pending')
-	total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-	created_at = models.DateTimeField(default=timezone.now)
+	order_id = models.CharField(max_length=50, primary_key=True)
+	user = models.ForeignKey(Users, on_delete=models.PROTECT, related_name='orders', db_column='user_id')
+	order_date = models.DateTimeField(default=timezone.now)
+	total_cost = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+	fullfilment_status = models.CharField(max_length=20, default='PLACED')
+	shipping_address = models.TextField(blank=True, null=True)
+	expected_delivery_date = models.DateField(blank=True, null=True)
 
 	def __str__(self):
-		return f"Order {self.id} by {self.buyer.email} ({self.status})"
+		return f"Order {self.order_id}: {self.fullfilment_status}"
 
 
 class OrdProdLink(models.Model):
-	order = models.ForeignKey(OrderRequest, on_delete=models.CASCADE, related_name='order_items')
-	product = models.ForeignKey(Product, on_delete=models.CASCADE)
-	quantity = models.DecimalField(max_digits=10, decimal_places=3, default=1)
-	price = models.DecimalField(max_digits=10, decimal_places=2)
+	order = models.ForeignKey(OrderRequest, on_delete=models.PROTECT, related_name='order_items', db_column='order_id')
+	product = models.ForeignKey(Product, on_delete=models.PROTECT, db_column='P_id')
+	quantity = models.IntegerField()
+	price_at_sale = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+
+	class Meta:
+		unique_together = ('order', 'product') 
 
 	def __str__(self):
-		return f"{self.quantity} x {self.product.title} in order {self.order.id}"
-
+		return f"{self.quantity} x {self.product.name} in order {self.order.order_id}"
