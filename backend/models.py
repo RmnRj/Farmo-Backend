@@ -19,6 +19,7 @@ class Users(models.Model):
 	ward = models.CharField(max_length=50, blank=True, null=True)
 	tole = models.CharField(max_length=100, blank=True, null=True)
 	dob = models.DateField(blank=True, null=True)
+	sex = models.CharField(max_length=10, blank=True, null=True)
 	whatsapp = models.CharField(max_length=15, blank=True, null=True)
 	facebook = models.CharField(max_length=200, blank=True, null=True)
 	join_date = models.DateTimeField(default=timezone.now)
