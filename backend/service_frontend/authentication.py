@@ -7,6 +7,7 @@ from ..models import Users, Tokens
 from ..serializers import UsersSerializer
 from django.utils import timezone
 from datetime import timedelta
+from django.db.models import Q
 import secrets
 from ..utils.update_last_activity import update_last_activity
 
@@ -14,33 +15,57 @@ from ..utils.update_last_activity import update_last_activity
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login(request):
-    """Login with identifier and password, returns tokens"""
+    """
+    First Login: Login with identifier and password, returns tokens
+    User sends: identifier (userID or Phone), password, is_admin, device_info
+    Server returns: login_access, token, refresh_token, user_id (and user data)
+    """
     identifier = request.data.get('identifier')
     password = request.data.get('password')
     is_admin = request.data.get('is_admin', False)
     device_info = request.data.get('device_info', '')
     
     if not identifier or not password:
-        return Response({'error': 'Identifier and password required'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'login_access': False,
+            'error_code': 'MISSING_CREDENTIALS'
+        }, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        from django.db.models import Q
-        user = Users.objects.get(Q(user_id=identifier) | Q(phone=identifier), is_admin=is_admin)
+        # Search user by userID or Phone and is_admin status
+        user = Users.objects.get(Q(user_id=identifier) | Q(phone=identifier), is_admin=is_admin
+        )
         
+        # Verify password
         if not user.check_password(password):
-            return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({
+                'login_access': False,
+                'error_code': 'INVALID_CREDENTIALS'
+            }, status=status.HTTP_401_UNAUTHORIZED)
         
+        # Check profile status
         if user.profile_status == 'PENDING':
-            return Response({'status': 'pending', 'message': 'Please activate your account'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({
+                'login_access': False,
+                'error_code': 'ACCOUNT_PENDING'
+            }, status=status.HTTP_403_FORBIDDEN)
         
-        if user.profile_status != 'ACTIVATED':
-            return Response({'error': 'Account not active'}, status=status.HTTP_403_FORBIDDEN)
+        if user.profile_status != 'ACTIVE':
+            return Response({
+                'login_access': False,
+                'error_code': 'ACCOUNT_INACTIVE'
+            }, status=status.HTTP_403_FORBIDDEN)
         
+        # Generate tokens
         token = secrets.token_urlsafe(32)
         refresh_token = secrets.token_urlsafe(32)
         issued_at = timezone.now()
-        expires_at = issued_at + timedelta(days=40)
+        if is_admin:
+            expires_at = issued_at + timedelta(hours=12)  # Admin tokens valid for 12 hours
+        else:
+            expires_at = issued_at + timedelta(days=40)
         
+        # Save token to database
         Tokens.objects.create(
             user_id=user,
             token=token,
@@ -50,55 +75,120 @@ def login(request):
             refresh_token=refresh_token
         )
         
+        # Update last activity
         update_last_activity(user)
         
+        # Return response according to documentation
         return Response({
-            'user': UsersSerializer(user).data,
+            'login_access': True,  # Changed from login_access
             'token': token,
             'refresh_token': refresh_token,
+            'user_id': user.user_id
         }, status=status.HTTP_200_OK)
         
     except Users.DoesNotExist:
-        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({
+            'login_access': False,
+            'error_code': 'INVALID_CREDENTIALS'
+        }, status=status.HTTP_401_UNAUTHORIZED)
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-def refresh_token_view(request):
-    """Refresh expired token using refresh_token"""
-    user_id = request.data.get('user_id')
+def login_with_token(request):
+    """
+    Second Login (Remember Me): Login with token, refresh_token and user_id
+    Used when user has "remember me" enabled
+    User sends: token, refresh_token, user_id
+    Server returns: login_access = True (if token valid) OR new tokens (if expired)
+    """
     token = request.data.get('token')
+    user_id = request.data.get('user_id')
     refresh_token = request.data.get('refresh_token')
-    device_info = request.data.get('device_info', '')
+    device_info = request.data.get('device_info')
     
-    if not user_id or not token or not refresh_token:
-        return Response({'error': 'user_id, token and refresh_token required'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    try:
-        token_obj = Tokens.objects.get(user_id__user_id=user_id, token=token, refresh_token=refresh_token)
-        
-        if token_obj.expires_at > timezone.now():
-            return Response({'message': 'Token still valid', 'token': token, 'refresh_token': refresh_token}, status=status.HTTP_200_OK)
-        
-        new_token = secrets.token_urlsafe(32)
-        new_refresh_token = secrets.token_urlsafe(32)
-        new_expires_at = timezone.now() + timedelta(days=40)
-        
-        token_obj.token = new_token
-        token_obj.refresh_token = new_refresh_token
-        token_obj.expires_at = new_expires_at
-        token_obj.issued_at = timezone.now()
-        token_obj.device_info = device_info
-        token_obj.save()
-        
+    if not token or not user_id or not refresh_token:
         return Response({
-            'user_id': user_id,
-            'token': new_token,
-            'refresh_token': new_refresh_token
-        }, status=status.HTTP_200_OK)
+            'login_access': False,
+            'error_code': 'MISSING_TOKENS_OR_USERID'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        # Find token entry in database
+        token_entry = Tokens.objects.get(
+            token=token,
+            user_id__user_id=user_id,
+            refresh_token=refresh_token,
+            device_info=device_info
+        )
+        
+        user = token_entry.user_id
+        
+        # Check profile status
+        if user.profile_status == 'PENDING':
+            return Response({
+                'login_access': False,
+                'error_code': 'ACCOUNT_PENDING', 
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        if user.profile_status != 'ACTIVE':
+            return Response({
+                'login_access': False,
+                'error_code': 'ACCOUNT_INACTIVE'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Check if token is expired (after 40 days)
+        current_time = timezone.now()
+        
+        if current_time > token_entry.expires_at:
+            # Token expired - generate new tokens using refresh_token
+            new_token = secrets.token_urlsafe(32)
+            new_refresh_token = secrets.token_urlsafe(32)
+            new_issued_at = timezone.now()
+            is_admin = user.is_admin
+            if is_admin:
+                new_expires_at = new_issued_at + timedelta(hours=12)  # Admin tokens valid for 12 hours
+            else:
+                new_expires_at = new_issued_at + timedelta(days=40)
+            
+            # Create New token entry
+            Tokens.objects.create(
+                user_id=user,
+                token=new_token,
+                refresh_token=new_refresh_token,
+                issued_at=new_issued_at,
+                expires_at=new_expires_at,
+                device_info=device_info
+            )
+            
+            update_last_activity(user)
+            
+            # Return new tokens
+            return Response({
+                'login_access': True,
+                'token': new_token,
+                'refresh_token': new_refresh_token,
+                'user_id': user.user_id
+            }, status=status.HTTP_200_OK)
+        
+        else:
+            # Token still valid - just grant access
+            update_last_activity(user)
+            
+            # According to doc: Second time login returns no new tokens
+            return Response({
+                'login_access': True,
+                'token': None,
+                'refresh_token': None,
+                'user_id': None
+            }, status=status.HTTP_200_OK)
         
     except Tokens.DoesNotExist:
-        return Response({'error': 'Invalid token or refresh_token'}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({
+            'login_access': False,
+            'error_code': 'INVALID_TOKEN'
+        }, status=status.HTTP_401_UNAUTHORIZED)
+
 
 
 @api_view(['POST'])  # Requires JWT authentication (default)
